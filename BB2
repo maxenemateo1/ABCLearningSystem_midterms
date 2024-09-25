@@ -1,0 +1,537 @@
+import tkinter as tk
+from tkinter import ttk
+from tkinter import messagebox
+import pyodbc
+import random
+from datetime import datetime
+from database import connect_to_db
+
+def open_borrowing_books_window(parent, username):
+    """Open a new window for borrowing books."""
+    borrowing_window = tk.Toplevel(parent)
+    borrowing_window.title("Borrowing Books")
+    borrowing_window.geometry("800x600")
+
+    setup_transactions_interface(borrowing_window, username)
+
+def setup_transactions_interface(tab, username):
+    """Setup the transactions interface with main tab control and nested sub-tab controls."""
+    header_frame = tk.Frame(tab, bg="#C39898")
+    header_frame.pack(fill=tk.X, pady=5)
+
+    tk.Label(header_frame, text="ABC LEARNING RESOURCE CENTER", font=("Arial", 16, "bold"), bg="#C39898").pack(side=tk.LEFT, padx=10)
+    tk.Label(header_frame, text=f"Welcome, {username}!", font=("Arial", 14), bg="#C39898").pack(side=tk.RIGHT, padx=10)
+
+    main_tab_control = ttk.Notebook(tab)
+    main_tab_control.pack(fill=tk.BOTH, expand=True)
+
+    borrow_transaction_tab = ttk.Frame(main_tab_control)
+    main_tab_control.add(borrow_transaction_tab, text="Borrow Transaction")
+
+    return_transaction_tab = ttk.Frame(main_tab_control)
+    main_tab_control.add(return_transaction_tab, text="Return Transaction")
+
+    administrative_tab = ttk.Frame(main_tab_control)
+    main_tab_control.add(administrative_tab, text="Administrative Transactions")
+
+    setup_borrow_transaction_tabs(borrow_transaction_tab, username)
+    setup_return_transaction_interface(return_transaction_tab)
+    setup_administrative_transactions_interface(administrative_tab)
+
+def setup_borrow_transaction_tabs(tab, username):
+    """Setup the Borrow Transaction tab with nested sub-tabs for 'Manual Entry' and 'Reservation'."""
+    borrow_transaction_notebook = ttk.Notebook(tab)
+    borrow_transaction_notebook.pack(fill=tk.BOTH, expand=True)
+
+    manual_entry_frame = ttk.Frame(borrow_transaction_notebook)
+    borrow_transaction_notebook.add(manual_entry_frame, text="Manual Entry")
+
+    reservation_frame = ttk.Frame(borrow_transaction_notebook)
+    borrow_transaction_notebook.add(reservation_frame, text="Reservation")
+
+    transactionrec_frame = ttk.Frame(borrow_transaction_notebook)
+    borrow_transaction_notebook.add(transactionrec_frame, text="Transaction Record")
+
+    setup_manual_entry_interface(manual_entry_frame, username)
+    setup_reservation_interface(reservation_frame)  # Adjusted
+    setup_transaction_record_interface(transactionrec_frame)
+
+
+def setup_manual_entry_interface(tab, username):
+    """Setup the Manual Entry sub-tab interface with required functionalities, filter, and cart grid."""
+    global book_info_frame, available_label, isbn_label, title_label, author_label, abstract_text, search_tree, cart_tree
+
+    # Create the main content frame
+    content_frame = tk.Frame(tab)
+    content_frame.pack(fill=tk.BOTH, expand=1, padx=10, pady=10)
+
+    # Book Information Grid: Left Side
+    book_info_frame = tk.Frame(content_frame, relief=tk.RIDGE, borderwidth=2)
+    book_info_frame.grid(row=0, column=0, sticky="ns", padx=10, pady=10)
+
+    tk.Label(book_info_frame, text="Book Information", font=("Arial", 12, "bold")).grid(row=0, column=0, padx=10, pady=5, columnspan=2)
+
+    # Book Details Labels
+    labels = ["Available", "ISBN", "Title", "Author", "Abstract"]
+    for i, label in enumerate(labels, start=1):
+        tk.Label(book_info_frame, text=label, anchor="w").grid(row=i, column=0, padx=10, pady=5, sticky="w")
+
+    # Book Information Values
+    available_label = tk.Label(book_info_frame, text="--", width=30, relief=tk.SUNKEN)
+    isbn_label = tk.Label(book_info_frame, text="--", width=30, relief=tk.SUNKEN)
+    title_label = tk.Label(book_info_frame, text="--", width=30, relief=tk.SUNKEN)
+    author_label = tk.Label(book_info_frame, text="--", width=30, relief=tk.SUNKEN)
+    abstract_text = tk.Text(book_info_frame, height=5, width=30, wrap="word", relief=tk.SUNKEN)
+
+    values = [available_label, isbn_label, title_label, author_label, abstract_text]
+    for i, value in enumerate(values, start=1):
+        value.grid(row=i, column=1, padx=10, pady=5, sticky="w")
+
+    # Navigation Buttons
+    nav_frame = tk.Frame(book_info_frame)
+    nav_frame.grid(row=6, column=1, pady=10, sticky="w")
+    tk.Button(nav_frame, text="<<", relief=tk.GROOVE, width=3).pack(side="left", padx=5)
+    tk.Button(nav_frame, text=">>", relief=tk.GROOVE, width=3).pack(side="left", padx=5)
+
+    # Assume you have a way to determine the user's role
+    role = "member"  # Set this based on your login mechanism
+
+    # Add 'Add to Cart' button
+    add_to_cart_button = tk.Button(
+        book_info_frame,
+        text="Add to Cart",
+        command=lambda: add_to_cart(isbn_label.cget("text"), title_label.cget("text"), role)
+    )
+    add_to_cart_button.grid(row=7, column=1, pady=10, sticky="w")
+
+    # Filter Section
+    filter_frame = tk.Frame(content_frame, relief=tk.GROOVE, borderwidth=2)
+    filter_frame.grid(row=0, column=2, sticky="nsew", padx=10, pady=10)
+
+    tk.Label(filter_frame, text="Filter", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=5)
+
+    # Category Filter
+    tk.Label(filter_frame, text="Category").pack(anchor="w", padx=10)
+    category_combobox = ttk.Combobox(filter_frame, values=[
+        "All", "Communication", "Electronic media", "Mechatronics", "Databases",
+        "Electronics Engineering", "Web Design", "Automotive", "Electronics",
+        "Plumbing", "Game Art", "Programming", "Utilities", "Networking",
+        "Game Design", "Game Programming", "ICT"
+    ])
+    category_combobox.pack(anchor="w", padx=10, pady=5)
+
+    # Title Filter
+    tk.Label(filter_frame, text="Title").pack(anchor="w", padx=10)
+    title_entry = tk.Entry(filter_frame, width=25)  # Wider Entry
+    title_entry.pack(anchor="w", padx=10, pady=5)
+
+    # ISBN Filter
+    tk.Label(filter_frame, text="ISBN").pack(anchor="w", padx=10)
+    isbn_entry = tk.Entry(filter_frame, width=25)  # Wider Entry
+    isbn_entry.pack(anchor="w", padx=10, pady=5)
+
+    # Search Button
+    tk.Button(filter_frame, text="Search", relief=tk.GROOVE, command=lambda: perform_search(title_entry.get(), isbn_entry.get(), category_combobox.get())).pack(pady=10, padx=10)
+
+    # Search Results Section
+    search_results_frame = tk.Frame(content_frame, relief=tk.GROOVE, borderwidth=2)
+    search_results_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+
+    tk.Label(search_results_frame, text="Search Results", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=5)
+
+    # Search Results Table
+    search_tree = ttk.Treeview(search_results_frame, columns=("isbn", "title"), show="headings", selectmode="browse")
+    search_tree.heading("isbn", text="ISBN")
+    search_tree.heading("title", text="Title")
+    search_tree.pack(fill=tk.BOTH, expand=1, padx=10, pady=5)
+
+    # Bind the selection event to a function
+    search_tree.bind("<<TreeviewSelect>>", on_search_result_select)
+
+    # Cart Section
+    cart_frame = tk.Frame(content_frame, relief=tk.GROOVE, borderwidth=2)
+    cart_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=10)
+
+    tk.Label(cart_frame, text="Cart", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=5)
+
+    # Cart Table
+    cart_tree = ttk.Treeview(cart_frame, columns=("title", "isbn"), show="headings", selectmode="extended")
+    cart_tree.heading("title", text="Title")
+    cart_tree.heading("isbn", text="ISBN")
+    cart_tree.pack(side="left", fill=tk.BOTH, expand=1, padx=(10, 0), pady=5)
+
+    # Buttons for Cart
+    button_frame = tk.Frame(cart_frame)
+    button_frame.pack(side="right", fill=tk.Y, padx=10, pady=10)
+
+    tk.Button(button_frame, text="Remove", relief=tk.GROOVE, command=lambda: remove_from_cart(cart_tree)).pack(side="top", padx=5, pady=5)
+    tk.Button(button_frame, text="Reserve", relief=tk.GROOVE, command=lambda: reserve_books(cart_tree, username, role)).pack(side="top", padx=5, pady=5)
+
+    # Ensuring correct binding
+    search_tree.bind("<<TreeviewSelect>>", on_search_result_select)
+
+def fetch_book_info(isbn):
+    """Retrieve detailed book information based on ISBN."""
+    try:
+        connection = connect_to_db()
+        cursor = connection.cursor()
+
+        # Update query to fetch InStock
+        query = """
+        SELECT InStock, Author, Title, Abstract
+        FROM tblBooks
+        WHERE ISBN = ?
+        """
+        cursor.execute(query, (isbn,))
+        book = cursor.fetchone()
+
+        if book:
+            available_label.config(text="Yes" if book[0] > 0 else "No")
+            return book
+    except Exception as e:
+        messagebox.showerror("Database Error", str(e))
+    finally:
+        connection.close()
+    return None
+
+def perform_search(title, isbn, category):
+    global search_tree  # Ensure we're using the global treeview
+    conn = connect_to_db()
+    if conn is None:
+        messagebox.showerror("Database Error", "Unable to connect to the database.")
+        return
+
+    cursor = conn.cursor()
+    query = "SELECT ISBN, Title FROM tblBooks WHERE 1=1"
+    parameters = []
+
+    if title:
+        query += " AND Title LIKE ?"
+        parameters.append(f"%{title}%")
+    if isbn:
+        query += " AND ISBN = ?"
+        parameters.append(isbn)
+    if category and category != "All":
+        query += " AND Category = ?"
+        parameters.append(category)
+
+    try:
+        cursor.execute(query, parameters)
+        books = cursor.fetchall()
+
+        # Update the search results tree
+        print(f"Before delete: {search_tree.get_children()}")  # Debugging line
+        search_tree.delete(*search_tree.get_children())  # Ensure this is a Treeview instance
+        for book in books:
+            search_tree.insert("", "end", values=(book[0], book[1]))
+    except Exception as e:
+        messagebox.showerror("Database Error", str(e))
+    finally:
+        conn.close()
+
+def on_search_result_select(event):
+    """Handle selection of a search result."""
+    selected_item = search_tree.selection()
+    if selected_item:
+        values = search_tree.item(selected_item[0], "values")
+        if values:
+            isbn, title = values
+            display_book_info(isbn)
+
+def display_book_info(isbn):
+    """Fetch and display book information."""
+    book_info = fetch_book_info(isbn)
+
+    if book_info:
+        isbn_label.config(text=isbn)
+        title_label.config(text=book_info[2])
+        author_label.config(text=book_info[1])
+        abstract_text.delete(1.0, tk.END)  # Clear previous content
+        abstract_text.insert(tk.END, book_info[3])  # Insert new content
+        available_label.config(text="Yes" if book_info[0] > 0 else "No")  # Check InStock
+    else:
+        clear_book_info()
+
+def clear_book_info():
+    """Clear the book information fields."""
+    isbn_label.config(text="--")
+    title_label.config(text="--")
+    author_label.config(text="--")
+    abstract_text.delete(1.0, tk.END)
+    available_label.config(text="--")
+
+def add_to_cart(isbn, title, role):
+    """Add selected book to cart based on user role."""
+    if role in ["member", "admin"]:
+        # Check if the book is already in the cart
+        existing_items = cart_tree.get_children()
+        for item in existing_items:
+            values = cart_tree.item(item, "values")
+            if values[1] == isbn:  # values[1] is ISBN
+                messagebox.showinfo("Cart", "This book is already in your cart.")
+                return
+        
+        # If not already in cart, add the book
+        cart_tree.insert("", "end", values=(title, isbn))
+        messagebox.showinfo("Cart", f"'{title}' has been added to your cart.")
+    
+    elif role == "guest":
+        messagebox.showinfo("Cart", "You must be logged in to add books to the cart. Please register or log in.")
+    
+    else:
+        messagebox.showerror("Role Error", "Invalid user role.")
+
+def remove_from_cart(cart_tree):
+    """Remove selected book from cart."""
+    selected_item = cart_tree.selection()
+    if selected_item:
+        cart_tree.delete(selected_item)
+    else:
+        messagebox.showinfo("Cart", "No book selected to remove.")
+
+def get_book_quantity(isbn):
+    """Retrieve the available quantity of the book from the database."""
+    conn = connect_to_db()
+    if conn is None:
+        return 0  # Return 0 if there's a database connection error
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT InStock FROM tblBooks WHERE ISBN=?", (isbn,))
+    result = cursor.fetchone()
+    conn.close()
+
+    return result[0] if result else 0  # Return the quantity or 0 if the book is not found
+
+def reserve_books(cart_tree, username):
+    """Reserve selected books from the cart."""
+    selected_items = cart_tree.selection()
+    
+    if not selected_items:
+        messagebox.showwarning("No Selection", "Please select books to reserve.")
+        return
+
+    conn = connect_to_db()
+    if conn is None:
+        messagebox.showerror("Database Error", "Unable to connect to the database.")
+        return
+
+    cursor = conn.cursor()
+    successful_reservations = 0
+
+    for item in selected_items:
+        values = cart_tree.item(item, "values")
+        isbn = values[1]  # Assuming the second value is the ISBN
+
+        # Check current quantity
+        cursor.execute("SELECT InStock FROM tblBooks WHERE ISBN=?", (isbn,))
+        result = cursor.fetchone()
+        
+        if result and result[0] > 0:  # Check if there's enough quantity
+            try:
+                # Insert reservation into tblReserveTransaction
+                cursor.execute("""
+                    INSERT INTO tblReserveTransaction (UserID, ISBN, DateResreved, Notes) 
+                    VALUES (?, ?, GETDATE(), ?)
+                """, (username, isbn, "Reserved by user"))
+
+                # Update quantity in tblBooks
+                cursor.execute("UPDATE tblBooks SET Qty = Qty - 1 WHERE ISBN=?", (isbn,))
+                
+                successful_reservations += 1
+            except Exception as e:
+                messagebox.showerror("Reservation Error", f"An error occurred: {e}")
+                return
+        else:
+            messagebox.showwarning("Unavailable", f"'{values[0]}' is not available for reservation.")
+
+    conn.commit()
+    messagebox.showinfo("Reservation Successful", f"{successful_reservations} book(s) have been reserved successfully.")
+
+    # Clear the cart by deleting selected items
+    for item in selected_items:
+        cart_tree.delete(item)
+
+def setup_return_transaction_interface(tab): 
+    """Setup the Return Transaction tab with a simple interface."""
+    tk.Label(tab, text="Return Transaction", font=("Arial", 14, "bold")).pack(pady=10)
+
+def setup_administrative_transactions_interface(tab):
+    """Setup the Administrative Transactions tab."""
+    tk.Label(tab, text="Administrative Transactions", font=("Arial", 14, "bold")).pack(pady=10)
+
+def setup_transaction_record_interface(tab): # Transaction Record Tab
+    """Setup the Transaction Records tab to display past transactions."""
+    record_frame = tk.Frame(tab)
+    record_frame.pack(fill=tk.BOTH, expand=1, padx=10, pady=10)
+
+    tk.Label(record_frame, text="Transaction Records", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=5)
+
+    # Transaction Records Table
+    record_tree = ttk.Treeview(record_frame, columns=("transaction_no", "date_reserved", "isbn", "notes"), show="headings")
+    record_tree.heading("transaction_no", text="Transaction No")
+    record_tree.heading("date_reserved", text="Date Reserved")
+    record_tree.heading("isbn", text="ISBN")
+    record_tree.heading("notes", text="Notes")
+    record_tree.pack(fill=tk.BOTH, expand=1, padx=10, pady=5)
+
+    # Load transaction records from the database
+    load_transaction_records(record_tree)
+
+def load_transaction_records(tree):
+    """Load transaction records from the database and populate the tree view."""
+    conn = connect_to_db()
+    if conn is None:
+        messagebox.showerror("Database Error", "Unable to connect to the database.")
+        return
+
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT TransactionNo, DateResreved, ISBN, Notes FROM tblReserveTransaction")
+        records = cursor.fetchall()
+        for record in records:
+            tree.insert("", "end", values=record)
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred while fetching records: {e}")
+    finally:
+        conn.close()
+
+def setup_reservation_interface(tab): # Reservation Tab
+    """Setup the Reservation interface with search functionality."""
+    # Header
+    header_frame = tk.Frame(tab, bg="#C39898")
+    header_frame.pack(fill=tk.X, pady=5)
+
+    tk.Label(header_frame, text="ABC LEARNING RESOURCE CENTER", font=("Arial", 16, "bold"), bg="#C39898").pack(side=tk.LEFT, padx=10)
+    tk.Label(header_frame, text="Search Transaction Record", font=("Arial", 14), bg="#C39898").pack(side=tk.RIGHT, padx=10)
+
+    # Search Form
+    search_frame = tk.Frame(tab, relief=tk.GROOVE, borderwidth=2)
+    search_frame.pack(fill=tk.BOTH, padx=10, pady=10)
+
+    tk.Label(search_frame, text="Member ID:").pack(anchor="w", padx=10, pady=5)
+    member_id_entry = tk.Entry(search_frame)
+    member_id_entry.pack(anchor="w", padx=10, pady=5)
+
+    tk.Button(search_frame, text="Search", command=lambda: search_reservations(member_id_entry.get())).pack(anchor="w", padx=10, pady=5)
+
+    # Transaction Records Grid
+    transaction_frame = tk.Frame(tab, relief=tk.GROOVE, borderwidth=2)
+    transaction_frame.pack(fill=tk.BOTH, padx=10, pady=10)
+
+    tk.Label(transaction_frame, text="Reserved Books", font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=5)
+
+    # Transaction Records Table
+    global reservation_tree  # Declare globally if you want to access it in other functions
+    reservation_tree = ttk.Treeview(transaction_frame, columns=("title", "isbn"), show="headings")
+    reservation_tree.heading("title", text="Title")
+    reservation_tree.heading("isbn", text="ISBN")
+    reservation_tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+    # Buttons for Reservation Management
+    button_frame = tk.Frame(transaction_frame)
+    button_frame.pack(fill=tk.X, padx=10, pady=10)
+
+    tk.Button(button_frame, text="Remove Selected Books", command=lambda: remove_selected_books(reservation_tree)).pack(side="left", padx=5)
+    tk.Button(button_frame, text="Lend Listed Items", command=lambda: lend_listed_items(reservation_tree)).pack(side="left", padx=5)
+
+def search_reservations(member_id):
+    """Fetch and display reservations for the specified member ID."""
+    if not member_id:
+        messagebox.showwarning("Input Error", "Please enter a Member ID.")
+        return
+
+    conn = connect_to_db()
+    if conn is None:
+        messagebox.showerror("Database Error", "Unable to connect to the database.")
+        return
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ISBN, TransactionNo FROM tblReserveTransaction WHERE UserID = ?", (member_id,))
+        reservations = cursor.fetchall()
+
+        # Clear previous results
+        reservation_tree.delete(*reservation_tree.get_children())
+        
+        if reservations:
+            for row in reservations:
+                reservation_tree.insert("", "end", values=row)
+        else:
+            messagebox.showinfo("No Results", "No reservations found for this Member ID.")
+
+    except Exception as e:
+        messagebox.showerror("Query Error", f"An error occurred: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def remove_selected_books(tree):
+    """Remove selected books from the reservation list."""
+    global current_user_id  # Ensure you can access the global variable
+
+    selected_item = tree.selection()
+    if selected_item:
+        for item in selected_item:
+            isbn = tree.item(item)['values'][0]  # Assuming first column is ISBN
+            conn = connect_to_db()
+            cursor = conn.cursor()
+            
+            cursor.execute("DELETE FROM tblReserveTransaction WHERE ISBN = ? AND UserID = ?", (isbn, current_user_id))  # Add UserID to specify which reservation to remove
+            conn.commit()
+            tree.delete(item)
+
+        messagebox.showinfo("Success", "Selected books have been removed from your reservations.")
+        
+        cursor.close()
+        conn.close()
+    else:
+        messagebox.showwarning("Warning", "No reservation selected.")
+
+def lend_listed_items(tree):
+    """Lend the selected reserved items."""
+    selected_item = tree.selection()
+    if selected_item:
+        for item in selected_item:
+            isbn = tree.item(item)['values'][0]  # Assuming first column is ISBN
+            transaction_no = generate_transaction_no()  # Implement a function to generate unique transaction numbers
+            conn = connect_to_db()
+            cursor = conn.cursor()
+            
+            # Insert into tblBorrowTran
+            cursor.execute("INSERT INTO tblBorrowTran (UserID, TransactionNo, DateBorrowed, ISBN, IsBookReturned, Notes) VALUES (?, ?, ?, ?, ?, ?)", 
+                           (current_user_id, transaction_no, datetime.now(), isbn, 0, None))  # Adjust accordingly
+            
+            # Optionally, remove the reservation
+            cursor.execute("DELETE FROM tblReserveTransaction WHERE ISBN = ? AND UserID = ?", (isbn, current_user_id))
+            conn.commit()
+
+        messagebox.showinfo("Success", "Selected books have been lent out.")
+        
+        cursor.close()
+        conn.close()
+    else:
+        messagebox.showwarning("Warning", "No reservation selected.")
+
+def generate_transaction_no():
+    """Generate a unique transaction number."""
+    conn = connect_to_db()  # Connect to your database
+    cursor = conn.cursor()
+    
+    while True:
+        # Generate a random transaction number
+        transaction_no = random.randint(10000, 99999)
+        
+        # Check if the transaction number already exists
+        cursor.execute("SELECT COUNT(*) FROM tblBorrowTran WHERE TransactionNo = ?", (transaction_no,))
+        exists = cursor.fetchone()[0]
+        
+        if exists == 0:
+            # If it doesn't exist, return this number
+            return transaction_no
+            
+    # Close the connection
+        cursor.close()
+        conn.close()
+
+
