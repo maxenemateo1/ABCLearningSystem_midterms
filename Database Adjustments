@@ -1,0 +1,8 @@
+SELECT TOP (1000) [id]
+      ,[uname]
+      ,[email]
+      ,[password1]
+      ,[role]
+      ,[validity]
+  FROM [Python].[dbo].[membership]
+DATABASE NAME Python
